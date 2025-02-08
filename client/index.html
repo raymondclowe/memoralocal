@@ -95,6 +95,7 @@
                     body: formData
                 });
                 await response.json();
+                console.log('Upload successful');
             } catch (err) {
                 console.error('Upload failed:', err);
             }
@@ -134,7 +135,7 @@
                         mediaRecorder.stop();
                         continuousRecording();
                     }
-                }, 10000);
+                }, 30000); // 30 seconds
             }
 
             continuousRecording();

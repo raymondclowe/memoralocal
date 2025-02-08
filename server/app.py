@@ -16,7 +16,8 @@ UPLOAD_FOLDER = 'uploads'
 TRANSCRIPT_FOLDER = 'transcripts'
 processing_queue = Queue()
 # model = WhisperModel("tiny", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
-model = WhisperModel("base.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
+# model = WhisperModel("base.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
+model = WhisperModel("small.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
 # model = WhisperModel("tiny.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
 # model = WhisperModel("distil-large-v2", device="cpu", compute_type="int8") # distill large v2 is accurate but slow and is English only
 
@@ -26,6 +27,14 @@ processing_status = {
     'files_processed': 0,
     'files_pending': 0,
     'last_transcript': None
+}
+
+# Add these global variables at the top with the other globals
+current_transcript = {
+    'text': '',
+    'last_update': None,
+    'base_metadata': None,
+    'output_file': None
 }
 
 for folder in [UPLOAD_FOLDER, TRANSCRIPT_FOLDER]:
@@ -38,20 +47,41 @@ def update_status(status_update):
     print(f"Updating status: {status_update}")
     processing_status.update(status_update)
 
+def get_latest_transcript_info():
+    transcript_files = glob.glob(f"{TRANSCRIPT_FOLDER}/*.txt")
+    if not transcript_files:
+        return None, None
+    latest_file = max(transcript_files, key=os.path.getmtime)
+    return latest_file, os.path.getmtime(latest_file)
+
+def should_append_transcript(current_time):
+    latest_file, latest_mtime = get_latest_transcript_info()
+    if not latest_file:
+        return False
+    return (current_time - latest_mtime) <= 30  # 30 seconds threshold
 
 def process_audio_files():
+    global current_transcript
+    
     while True:
         wav_files = glob.glob(f"{UPLOAD_FOLDER}/*.wav")
         update_status({'files_pending': len(wav_files)})
         
+        current_time = time.time()
+        # Check if we need to reset due to time gap (60 seconds passed)
+        if (current_transcript['last_update'] and 
+            current_time - current_transcript['last_update'] > 60):
+            current_transcript = {
+                'text': '',
+                'last_update': None,
+                'base_metadata': None,
+                'output_file': None
+            }
+        
         for wav_path in wav_files:
             json_path = wav_path.replace('.wav', '.json')
-            transcript_path = os.path.join(
-                TRANSCRIPT_FOLDER, 
-                os.path.basename(wav_path).replace('.wav', '.txt')
-            )
             
-                        # Clean up orphaned files
+            # Clean up orphaned files
             if not os.path.exists(json_path):
                 os.remove(wav_path)
                 print(f"Removed orphaned WAV file: {wav_path}")
@@ -65,28 +95,35 @@ def process_audio_files():
                 metadata = json.load(f)
             
             # Transcribe audio
-            print(f"Start transcribing {wav_path}")
             segments, info = model.transcribe(wav_path)
-            # print(info)
             transcript = "\n".join([seg.text for seg in segments])
             
-            print(f"Transcript: {transcript}")
-            # Skip empty transcripts and clean up
             if not transcript.strip():
-                print(f"Empty transcript, cleaning up: {wav_path}")
-                os.remove(wav_path)
-                os.remove(json_path)
+                print(f"Empty transcript, skipping: {wav_path}")
                 continue
-            
-            # Save transcript
-            with open(transcript_path, 'w', encoding='utf-8') as f:
-                f.write(f"""Recording from {metadata['timestamp']}
+
+            # Handle transcript storage
+            if not current_transcript['text']:
+                # Start new transcript file
+                current_transcript['base_metadata'] = metadata
+                current_transcript['output_file'] = os.path.join(
+                    TRANSCRIPT_FOLDER, 
+                    os.path.basename(wav_path).replace('.wav', '.txt')
+                )
+                current_transcript['text'] = f"""Recording from {metadata['timestamp']}
 Username: {metadata['username']}
 Location: {metadata.get('gps_lat', 'N/A')}, {metadata.get('gps_lon', 'N/A')}
 
 Transcript:
-{transcript}
-""")
+{transcript}"""
+            else:
+                # Append to existing transcript
+                current_transcript['text'] += f"\n{transcript}"
+            
+            # Update timestamp and save to file
+            current_transcript['last_update'] = current_time
+            with open(current_transcript['output_file'], 'w', encoding='utf-8') as f:
+                f.write(current_transcript['text'])
             
             # Clean up original files
             os.remove(wav_path)
@@ -95,10 +132,11 @@ Transcript:
             
             update_status({
                 'files_processed': processing_status['files_processed'] + 1,
-                'last_transcript': transcript_path
+                'last_transcript': current_transcript['output_file']
             })
         
         time.sleep(5)
+
 
 
 
