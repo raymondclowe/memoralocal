@@ -3,6 +3,12 @@
 <head>
     <title>MemoraLocal</title>
     <style>
+        .input-field {
+            margin: 10px 20px;
+            padding: 10px;
+            font-size: 16px;
+            width: 300px;
+        }
         .record-btn {
             font-size: 24px;
             padding: 20px 40px;
@@ -29,6 +35,10 @@
     </style>
 </head>
 <body>
+    <div>
+        <span>User: </span><input type="text" id="usernameField" class="input-field" placeholder="Enter your username"> <br>
+        <spand>Subject: </spand><input type="text" id="subjectField" class="input-field" placeholder="Enter subject (optional)">
+    </div>
     <button id="recordButton" class="record-btn">Start Recording</button>
     <div id="status"></div>
     <div id="latest-transcript"></div>
@@ -37,7 +47,20 @@
         const recordButton = document.getElementById('recordButton');
         const statusDiv = document.getElementById('status');
         const transcriptDiv = document.getElementById('latest-transcript');
+        const usernameField = document.getElementById('usernameField');
+        const subjectField = document.getElementById('subjectField');
         const BACKEND_URL = 'http://localhost:5000';
+
+        // Load saved username from localStorage
+        const savedUsername = localStorage.getItem('username');
+        if (savedUsername) {
+            usernameField.value = savedUsername;
+        }
+
+        // Save username to localStorage when changed
+        usernameField.addEventListener('input', () => {
+            localStorage.setItem('username', usernameField.value);
+        });
         let mediaRecorder;
         let isRecording = false;
         let chunkCounter = 0;
@@ -75,7 +98,8 @@
             
             const formData = new FormData();
             formData.append('audio', blob, 'audio.wav');
-            formData.append('username', 'test_user');
+            formData.append('username', usernameField.value || 'anonymous');
+            formData.append('subject', subjectField.value || '');
             
             if (navigator.geolocation) {
                 try {
@@ -95,6 +119,7 @@
                     body: formData
                 });
                 await response.json();
+                console.log('Upload successful');
             } catch (err) {
                 console.error('Upload failed:', err);
             }
@@ -134,7 +159,7 @@
                         mediaRecorder.stop();
                         continuousRecording();
                     }
-                }, 10000);
+                }, 10000); // 30 seconds / 10 seconds
             }
 
             continuousRecording();
