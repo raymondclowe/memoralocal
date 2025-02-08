@@ -17,8 +17,8 @@ TRANSCRIPT_FOLDER = 'transcripts'
 processing_queue = Queue()
 # model = WhisperModel("tiny", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
 # model = WhisperModel("base.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
-model = WhisperModel("small.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
-# model = WhisperModel("tiny.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
+# model = WhisperModel("small.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
+model = WhisperModel("tiny.en", device="cpu", compute_type="int8") # tiny works and is fast but accuracy is very low
 # model = WhisperModel("distil-large-v2", device="cpu", compute_type="int8") # distill large v2 is accurate but slow and is English only
 
 # Define processing_status in global scope
@@ -80,6 +80,11 @@ def process_audio_files():
         
         for wav_path in wav_files:
             json_path = wav_path.replace('.wav', '.json')
+
+            # make sure that both file exist and are not zero length
+            if not os.path.exists(json_path) or not os.path.exists(wav_path):
+                print(f"Missing WAV or JSON file, skipping: {wav_path}")
+                continue
             
             # Clean up orphaned files
             if not os.path.exists(json_path):
@@ -94,9 +99,17 @@ def process_audio_files():
             with open(json_path, 'r') as f:
                 metadata = json.load(f)
             
+
             # Transcribe audio
-            segments, info = model.transcribe(wav_path)
+            ## segments, info = model.transcribe(wav_path)
+            # do the transcription passing the existing transcript as context
+
+            segments, info = model.transcribe(wav_path, context=current_transcript['text'])
             transcript = "\n".join([seg.text for seg in segments])
+
+            # print out just most important things from info for debugging
+            print(f"Transcription info: {info['transcribe_time']} seconds, {info['audio_duration']} seconds, {info['audio_size']} bytes")
+
             
             if not transcript.strip():
                 print(f"Empty transcript, skipping: {wav_path}")
@@ -198,8 +211,8 @@ def upload_audio():
     }
 
     base_filename = f"{metadata['timestamp'].replace(':', '-')}_{metadata['username']}"
-    audio_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.wav")
-    json_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.json")
+    audio_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.wav.temp")
+    json_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.json.temp")
     
     print(f"Saving audio to: {audio_filepath}")
     audio_file.save(audio_filepath)
@@ -208,6 +221,14 @@ def upload_audio():
     print(f"Saving metadata to: {json_filepath}")
     with open(json_filepath, 'w') as f:
         json.dump(metadata, f, indent=2)
+
+    # prepare to rename and remove the .temp
+    final_audio_filepath = audio_filepath.replace('.temp', '')
+    final_json_filepath = json_filepath.replace('.temp', '')
+
+    # now actually rename them
+    os.rename(audio_filepath, final_audio_filepath)
+    os.rename(json_filepath, final_json_filepath)
 
     print(f"Files saved successfully. Audio size: {metadata['file_size']} bytes")
     return jsonify({
