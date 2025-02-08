@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MemoraLocal</title>
+    <style>
+        .record-btn {
+            font-size: 24px;
+            padding: 20px 40px;
+            margin: 20px;
+            cursor: pointer;
+        }
+        .recording {
+            background-color: #ff4444;
+            color: white;
+        }
+        #status {
+            font-size: 18px;
+            margin: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        #latest-transcript {
+            margin: 20px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <button id="recordButton" class="record-btn">Start Recording</button>
+    <div id="status"></div>
+    <div id="latest-transcript"></div>
+
+    <script>
+        const recordButton = document.getElementById('recordButton');
+        const statusDiv = document.getElementById('status');
+        const transcriptDiv = document.getElementById('latest-transcript');
+        const BACKEND_URL = 'http://localhost:5000';
+        let mediaRecorder;
+        let isRecording = false;
+        let chunkCounter = 0;
+        let statusInterval;
+
+        async function updateLatestTranscript() {
+            try {
+                const response = await fetch(`${BACKEND_URL}/latest`);
+                const data = await response.json();
+                if (data.content) {
+                    transcriptDiv.textContent = data.content;
+                }
+            } catch (err) {
+                console.error('Failed to fetch latest transcript:', err);
+            }
+        }
+
+        async function pollServerStatus() {
+            try {
+                const response = await fetch(`${BACKEND_URL}/status`);
+                const data = await response.json();
+                const serverStatus = `
+                    Files pending: ${data.status.files_pending}
+                    Files processed: ${data.status.files_processed}
+                `;
+                statusDiv.textContent = `Chunks recorded: ${chunkCounter} | ${serverStatus}`;
+                await updateLatestTranscript();
+            } catch (err) {
+                console.error('Status check failed:', err);
+            }
+        }
+
+        async function uploadAudioChunk(blob) {
+            chunkCounter++;
+            
+            const formData = new FormData();
+            formData.append('audio', blob, 'audio.wav');
+            formData.append('username', 'test_user');
+            
+            if (navigator.geolocation) {
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject);
+                    });
+                    formData.append('gps_lat', position.coords.latitude);
+                    formData.append('gps_lon', position.coords.longitude);
+                } catch (err) {
+                    console.log('GPS not available:', err);
+                }
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                await response.json();
+            } catch (err) {
+                console.error('Upload failed:', err);
+            }
+        }
+
+        async function startRecording() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            
+            mediaRecorder.ondataavailable = async (event) => {
+                if (event.data.size > 0) {
+                    const arrayBuffer = await event.data.arrayBuffer();
+                    const audioContext = new AudioContext();
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    const channelData = audioBuffer.getChannelData(0);
+                    
+                    const rms = Math.sqrt(
+                        channelData.reduce((sum, sample) => sum + sample * sample, 0) 
+                        / channelData.length
+                    );
+                    
+                    const VOLUME_THRESHOLD = 0.01;
+                    
+                    if (rms > VOLUME_THRESHOLD) {
+                        await uploadAudioChunk(event.data);
+                    } else {
+                        console.log(`Skipping quiet audio chunk (RMS: ${rms})`);
+                    }
+                }
+            };
+
+            function continuousRecording() {
+                if (!isRecording) return;
+                mediaRecorder.start();
+                setTimeout(() => {
+                    if (isRecording) {
+                        mediaRecorder.stop();
+                        continuousRecording();
+                    }
+                }, 10000);
+            }
+
+            continuousRecording();
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        recordButton.addEventListener('click', () => {
+            if (!isRecording) {
+                isRecording = true;
+                recordButton.textContent = 'Stop Recording';
+                recordButton.classList.add('recording');
+                startRecording();
+                statusInterval = setInterval(pollServerStatus, 5000);
+            } else {
+                isRecording = false;
+                recordButton.textContent = 'Start Recording';
+                recordButton.classList.remove('recording');
+                stopRecording();
+                clearInterval(statusInterval);
+            }
+        });
+
+        // Initial transcript fetch
+        updateLatestTranscript();
+    </script>
+</body>
+</html>
