@@ -2,3 +2,4 @@ uploads/
 localhost*
 transcripts/
 
+server/__pycache__/

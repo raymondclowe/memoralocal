@@ -104,12 +104,12 @@ def process_audio_files():
             ## segments, info = model.transcribe(wav_path)
             # do the transcription passing the existing transcript as context
 
-            segments, info = model.transcribe(wav_path, context=current_transcript['text'])
+            segments, info = model.transcribe(audio=wav_path, initial_prompt=current_transcript['text'])
             transcript = "\n".join([seg.text for seg in segments])
 
             # print out just most important things from info for debugging
-            print(f"Transcription info: {info['transcribe_time']} seconds, {info['audio_duration']} seconds, {info['audio_size']} bytes")
-
+            print(f"Transcription info: {info.duration} seconds audio, of {info.language:} language probability: {info.language_probability}")
+            print(f"Transcription: {transcript}")
             
             if not transcript.strip():
                 print(f"Empty transcript, skipping: {wav_path}")
