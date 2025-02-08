@@ -125,6 +125,7 @@ def process_audio_files():
                 )
                 current_transcript['text'] = f"""Recording from {metadata['timestamp']}
 Username: {metadata['username']}
+Subject: {metadata['subject']}
 Location: {metadata.get('gps_lat', 'N/A')}, {metadata.get('gps_lon', 'N/A')}
 
 Transcript:
@@ -203,6 +204,7 @@ def upload_audio():
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': request.remote_addr,
         'username': request.form.get('username', 'anonymous'),
+        'subject': request.form.get('subject', 'general'),
         'gps_lat': request.form.get('gps_lat'),
         'gps_lon': request.form.get('gps_lon'),
         'device_info': request.user_agent.string,
@@ -211,6 +213,9 @@ def upload_audio():
     }
 
     base_filename = f"{metadata['timestamp'].replace(':', '-')}_{metadata['username']}"
+    # append subject to the base_filename if it exists
+    if metadata['subject']:
+        base_filename += f"_{metadata['subject']}"
     audio_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.wav.temp")
     json_filepath = os.path.join(UPLOAD_FOLDER, f"{base_filename}.json.temp")
     
