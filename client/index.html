@@ -178,7 +178,7 @@
                 recordButton.textContent = 'Stop Recording';
                 recordButton.classList.add('recording');
                 startRecording();
-                statusInterval = setInterval(pollServerStatus, 5000);
+                statusInterval = setInterval(pollServerStatus, 10000);
             } else {
                 isRecording = false;
                 recordButton.textContent = 'Start Recording';
