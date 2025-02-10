@@ -159,7 +159,7 @@
                         mediaRecorder.stop();
                         continuousRecording();
                     }
-                }, 10000); // 30 seconds / 10 seconds
+                }, 30000); // 30 seconds / 10 seconds
             }
 
             continuousRecording();
@@ -178,7 +178,7 @@
                 recordButton.textContent = 'Stop Recording';
                 recordButton.classList.add('recording');
                 startRecording();
-                statusInterval = setInterval(pollServerStatus, 5000);
+                statusInterval = setInterval(pollServerStatus, 10000);
             } else {
                 isRecording = false;
                 recordButton.textContent = 'Start Recording';
